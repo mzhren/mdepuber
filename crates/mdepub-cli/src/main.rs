@@ -82,6 +82,10 @@ enum Command {
         #[arg(long, default_value = "light")]
         theme: String,
 
+        /// 排除某个章节（相对于书籍源目录的路径），可重复。
+        #[arg(long = "exclude")]
+        exclude: Vec<String>,
+
         /// 在封面之后插入一页可见的目录页（EPUB 与 PDF 都会生成）。
         #[arg(long)]
         toc_page: bool,
@@ -124,12 +128,13 @@ fn main() -> Result<()> {
             margin,
             theme,
             font,
+            exclude,
             toc_page,
             toc_depth,
             cache,
         } => export(
             source, out, name, format, title, author, lang, cover, page_size, margin, theme, font,
-            toc_page, toc_depth, cache,
+            exclude, toc_page, toc_depth, cache,
         ),
     }
 }
@@ -182,6 +187,7 @@ fn export(
     margin: f32,
     theme: String,
     font: String,
+    excluded: Vec<String>,
     toc_page: bool,
     toc_depth: u32,
     cache: Option<PathBuf>,
@@ -219,6 +225,7 @@ fn export(
             ..PdfOptions::default()
         },
         formats,
+        excluded,
         toc_page,
         toc_depth,
         output_dir: out.map(|o| o.display().to_string()).unwrap_or_default(),

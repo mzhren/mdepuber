@@ -604,11 +604,18 @@ fn build_tree(root: &Path, book_files: &HashSet<PathBuf>) -> Result<Vec<FsNode>>
         files: Vec<FsNode>,
     }
 
-    fn insert(dir: &mut Dir, parts: &[String], node: FsNode) {
-        if parts.is_empty() {
+    /// Insert `node` under `dir`, creating intermediate directories.
+    ///
+    /// `dirs` must contain only the *directory* components — the file name is
+    /// carried by `node` itself. Passing the full relative path here (including
+    /// the file name) silently wraps every file in a directory named after
+    /// itself.
+    fn insert(dir: &mut Dir, dirs: &[String], node: FsNode) {
+        if dirs.is_empty() {
             dir.files.push(node);
             return;
         }
+        let parts = dirs;
         let head = parts[0].clone();
         if !dir.dirs.iter().any(|(n, _)| n == &head) {
             dir.dirs.push((head.clone(), Dir::default()));
@@ -672,11 +679,13 @@ fn build_tree(root: &Path, book_files: &HashSet<PathBuf>) -> Result<Vec<FsNode>>
             in_book: book_files.contains(&PathBuf::from(&rel)),
             children: Vec::new(),
         };
-        let parts: Vec<String> = rel.split('/').map(|s| s.to_string()).collect();
-        if parts.is_empty() {
+        // Split "a/b/c.md" into directory parts ["a", "b"] plus the file node.
+        let segments: Vec<&str> = rel.split('/').filter(|s| !s.is_empty()).collect();
+        let Some((dirs, _file)) = segments.split_at_checked(segments.len().saturating_sub(1)) else {
             continue;
-        }
-        insert(&mut root_dir, &parts, node);
+        };
+        let dirs: Vec<String> = dirs.iter().map(|s| s.to_string()).collect();
+        insert(&mut root_dir, &dirs, node);
     }
 
     let mut out = Vec::new();
@@ -769,6 +778,40 @@ mod tests {
         let mut names = Vec::new();
         flatten(&ws.tree, &mut names);
         assert!(names.contains(&"index.md".to_string()), "tree = {names:?}");
+    }
+
+    #[test]
+    fn the_tree_does_not_wrap_files_in_a_directory_of_their_own_name() {
+        // Regression: every file used to end up as `<name>/<name>` because the
+        // whole relative path (file name included) was treated as directories.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("guide/deep")).unwrap();
+        std::fs::write(dir.path().join("top.md"), "# Top\n").unwrap();
+        std::fs::write(dir.path().join("guide/one.md"), "# One\n").unwrap();
+        std::fs::write(dir.path().join("guide/deep/two.md"), "# Two\n").unwrap();
+
+        let ws = open(dir.path()).unwrap();
+
+        fn shape(nodes: &[FsNode]) -> Vec<String> {
+            let mut out = Vec::new();
+            for node in nodes {
+                let mark = if node.is_dir { "/" } else { "" };
+                out.push(format!("{}{mark}", node.name));
+                let mut inner = shape(&node.children);
+                out.append(&mut inner);
+            }
+            out
+        }
+        let got = shape(&ws.tree);
+        // Files sit at the level their path says, with no self-named wrapper.
+        assert!(got.contains(&"top.md".to_string()), "{got:?}");
+        assert!(!got.contains(&"top.md/".to_string()), "{got:?}");
+        assert!(got.contains(&"guide/".to_string()), "{got:?}");
+        assert!(!got.contains(&"guide.md/".to_string()), "{got:?}");
+        assert!(got.contains(&"deep/".to_string()), "{got:?}");
+        assert!(got.contains(&"two.md".to_string()), "{got:?}");
+        assert!(!got.contains(&"one.md/".to_string()), "{got:?}");
+        assert!(!got.contains(&"two.md/".to_string()), "{got:?}");
     }
 
     #[test]

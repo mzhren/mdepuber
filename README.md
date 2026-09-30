@@ -40,6 +40,7 @@ Markdown 文件 / 文件夹 / mdBook 项目
 | --- | --- |
 | 三种输入 | 单个 `.md`、Markdown 文件夹、完整 mdBook 项目（含 `book.toml`） |
 | 章节顺序 | 有 `SUMMARY.md` 就用它；没有则按“自然排序”（`ch2` 在 `ch10` 前），`README.md`/`index.md` 自动置前 |
+| 排除文件 | 工作区文件列表里每个章节行悬停出现「×」，可把它从书里移除；不删磁盘文件，行内一键恢复。章节大纲同步显示「已排除」与「全部恢复」 |
 | 目录页 | 「书籍信息」面板里的「生成目录页」勾选框，在**封面之后**插入一页可见目录；可选列到一、二或三级标题。EPUB 与 PDF 都会生成 |
 | Front matter | 解析并剥离 YAML（`---`）与 TOML（`+++`）头部：`title` 用作章节标题，`date`/`tags`/`description`/`image`/`authors`/`lang`/`draft` 作为元数据展示，正文里再也不会出现头部原文 |
 | 双预览 | 即时 Markdown 渲染预览 + mdBook 真实 HTML 整书预览（可搜索） |
@@ -163,6 +164,25 @@ pulldown-cmark 配置）渲染成 HTML，然后：
 3. `.md` 链接映射到 `chapter-NNN.xhtml`，相对图片复制进 `images/`；
 4. 交给 `epub-builder` 组装 mimetype / container.xml / content.opf / nav / ncx。
 
+![从工作区文件列表中排除章节](docs/screenshot-exclude.png)
+
+**「排除文件」为什么不是删除文件。** 排除是在**渲染期**做的：注册一个 mdBook 预处理器
+`mdepuber-exclude`，在渲染前把匹配的章节从 `Book` 树里摘掉。
+
+```rust
+mdbook.with_preprocessor(FrontMatterPreprocessor);
+if !excluded.is_empty() {
+    mdbook.with_preprocessor(ExclusionPreprocessor::new(excluded));   // 只影响本次构建
+}
+```
+
+这样做的好处是：源文件一个字节都不改、立刻可撤销、而且对 HTML 预览 / PDF / EPUB 三条路径
+同时生效（如果去改 `SUMMARY.md`，就地构建的 mdBook 项目会被污染，散装文件夹模式也要额外
+处理）。排除项用「相对于书籍源目录的路径」标识，所以对 `README.md` 被 index 预处理器改写成
+`index.md` 这种情况也能对上（两个字段都匹配）。
+
+![生成目录页选项](docs/screenshot-toc-option.png)
+
 **目录页是怎么生成的。** EPUB 的阅读器导航（`nav.xhtml` / `toc.ncx`）和「书里能翻到的一页目录」
 是两回事，后者需要自己造一页 XHTML 并放进 spine。mdepuber 从 mdBook 的 `Book` 树构造目录
 （章节标题 + SUMMARY 嵌套层级 → `chapter-NNN.xhtml` 链接），`SUMMARY.md` 手写跳级（1 → 3）
@@ -172,6 +192,8 @@ PDF 那边不能用同一份数据，因为 mdBook 的 `print.html` 会**跨章�
 自己算锚点对不上。所以改成从生成好的 `print.html` 的 `<main>` 里把 `<h1>`~`<h3>` 连同
 `id` 一起读回来，再插到 `<main>` 开头 —— 这样锚点一定解析得到。侧栏的 `<h2>` 因为不在
 `<main>` 里而天然被排除。
+
+![front matter 被解析成元数据条](docs/screenshot-frontmatter.png)
 
 **Front matter 是怎么处理的。** mdBook 0.5 **完全不支持** front matter：给它一篇以 `---`
 开头的博客文，它会照常渲染 —— 开头的 `---` 变成一条分隔线，结尾的 `---` 把最后一个键变成
@@ -278,7 +300,17 @@ mdbook.with_preprocessor(FrontMatterPreprocessor);   // 渲染前剥离每章头
 | 目录层级 = 1 | `<ol>` 只有一层，且深层条目被折叠而非丢弃 |
 | 手写 SUMMARY 跳级 | `<ol>`/`<li>` 开闭标签数量平衡 |
 
-**单元测试**：`cargo test --workspace` → 44 passed（核心 38 + Tauri 6）。
+**排除功能验证**（对真实的 682 篇博客，排除 `posts/` 根目录的 14 个 Hugo 示例页）：
+
+| 检查项 | 结果 |
+| --- | --- |
+| EPUB 章节数 | 682 → **668** |
+| 示例页是否还在目录里 | **无**（`nav.xhtml` 中全部消失） |
+| 年份文章是否保留 | 是 |
+| 源文件是否被改动 | 否（渲染期过滤，磁盘零写入） |
+| 全部排除 | UI 拒绝并提示「至少要保留一个章节」 |
+
+**单元测试**：`cargo test --workspace` → 45 passed（核心 39 + Tauri 6）。
 `cargo build --workspace` 零警告。
 
 **编译**：`cargo build --workspace` 与 `pnpm build`（`tsc --noEmit && vite build`）均无错误、无警告。

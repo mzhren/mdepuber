@@ -44,6 +44,8 @@ export default function App() {
   const [epub, setEpub] = useState<EpubOptions>(defaultEpubOptions);
   const [pdf, setPdf] = useState<PdfOptions>(defaultPdfOptions);
   const [formats, setFormats] = useState<BookFormat[]>(["epub"]);
+  /** Chapter paths removed from the book (source-relative). Files stay on disk. */
+  const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
   const [tocPage, setTocPage] = useState(false);
   const [tocDepth, setTocDepth] = useState(3);
   const [outputDir, setOutputDir] = useState("");
@@ -148,6 +150,7 @@ export default function App() {
       setMode("render");
       setBaseName(ws.title);
       setFormats(["epub"]);
+      setExcluded(new Set());
 
       const dir = await api.defaultOutputDir(ws.root).catch(() => "");
       setOutputDir(dir);
@@ -250,6 +253,34 @@ export default function App() {
     [chapters, chapterIndex, loadChapter],
   );
 
+  const toggleExclude = useCallback(
+    (rel: string) => {
+      setExcluded((previous) => {
+        const next = new Set(previous);
+        if (next.has(rel)) {
+          next.delete(rel);
+          return next;
+        }
+        // An empty book cannot be built, so keep the last chapter.
+        if (workspace && next.size + 1 >= workspace.chapters.length) {
+          setErr("至少要保留一个章节，无法把全部章节排除。");
+          return previous;
+        }
+        next.add(rel);
+        return next;
+      });
+      // The mdBook preview is a built artefact; it has to be rebuilt to reflect
+      // the new chapter list.
+      setPreviewInfo(null);
+    },
+    [workspace, setErr],
+  );
+
+  const restoreAllExcluded = useCallback(() => {
+    setExcluded(new Set());
+    setPreviewInfo(null);
+  }, []);
+
   const handleSelectFile = useCallback(
     (path: string, isMarkdown: boolean) => {
       const match = chapters.find((item) => item.path === path);
@@ -315,7 +346,7 @@ export default function App() {
     setStatus({ kind: "busy", message: "正在用 mdBook 构建整书预览…" });
     setProgress(null);
     try {
-      const info = await api.buildPreview(workspace.root, meta);
+      const info = await api.buildPreview(workspace.root, meta, [...excluded]);
       setPreviewInfo(info);
       setMode("mdbook");
       setOk(`mdBook 预览已构建：${info.chapterCount} 个章节`);
@@ -325,7 +356,7 @@ export default function App() {
       setPreviewBuilding(false);
       setProgress(null);
     }
-  }, [workspace, meta, setOk, setErr]);
+  }, [workspace, meta, excluded, setOk, setErr]);
 
   /* ----------------------------------------------------------------- export */
 
@@ -343,6 +374,7 @@ export default function App() {
         epub,
         pdf,
         formats,
+        excluded: [...excluded],
         tocPage,
         tocDepth,
         outputDir,
@@ -361,7 +393,7 @@ export default function App() {
       setBusy(false);
       setProgress(null);
     }
-  }, [workspace, meta, epub, pdf, formats, tocPage, tocDepth, outputDir, baseName, setOk, setErr]);
+  }, [workspace, meta, epub, pdf, formats, excluded, tocPage, tocDepth, outputDir, baseName, setOk, setErr]);
 
   const openExportDialog = useCallback(() => {
     setReport(null);
@@ -456,6 +488,9 @@ export default function App() {
             activeChapterPath={chapter?.path ?? null}
             onMetaChange={(patch) => setMeta((prev) => ({ ...prev, ...patch }))}
             onSelectFile={handleSelectFile}
+            excluded={excluded}
+            onToggleExclude={toggleExclude}
+            onRestoreAll={restoreAllExcluded}
             tocPage={tocPage}
             tocDepth={tocDepth}
             onTocChange={(patch) => {
@@ -483,6 +518,7 @@ export default function App() {
             onOpenLinkedFile={(path) => handleSelectFile(path, true)}
             sourceRoot={workspace.srcDir}
             sourceBase={sourceBase}
+            excluded={excluded}
           />
         ) : (
           <EmptyState

@@ -122,6 +122,11 @@ export interface ExportRequest {
   epub: EpubOptions;
   pdf: PdfOptions;
   formats: BookFormat[];
+  /**
+   * Chapter paths (relative to the book source dir) to leave out of the book.
+   * Files stay on disk; they are dropped at render time.
+   */
+  excluded: string[];
   /** Insert a visible contents page at the front of the book. */
   tocPage: boolean;
   /** How many heading levels the contents page lists (1-3). */

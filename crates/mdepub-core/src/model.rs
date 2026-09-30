@@ -290,6 +290,12 @@ pub struct ExportRequest {
     pub epub: EpubOptions,
     pub pdf: PdfOptions,
     pub formats: Vec<BookFormat>,
+    /// Chapter paths to leave out of the book, relative to the book source
+    /// directory (forward slashes, e.g. `2026/09/some-post/index.md`).
+    ///
+    /// Excluded chapters are dropped by a preprocessor before mdBook renders
+    /// anything, so the files on disk are never touched.
+    pub excluded: Vec<String>,
     /// Insert a visible table-of-contents page at the very front of the book
     /// (right after the cover) in addition to the reader's built-in navigation.
     pub toc_page: bool,
@@ -309,6 +315,7 @@ impl Default for ExportRequest {
             epub: EpubOptions::default(),
             pdf: PdfOptions::default(),
             formats: vec![BookFormat::Epub],
+            excluded: Vec::new(),
             toc_page: false,
             toc_depth: 3,
             output_dir: String::new(),

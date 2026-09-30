@@ -44,8 +44,8 @@ export const api = {
 
   exportBook: (req: ExportRequest) => call<ExportReport>("export_book", { req }),
 
-  buildPreview: (source: string, meta: BookMeta) =>
-    call<PreviewInfo>("build_preview", { source, meta }),
+  buildPreview: (source: string, meta: BookMeta, excluded: string[] = []) =>
+    call<PreviewInfo>("build_preview", { source, meta, excluded }),
 
   previewBase: () => call<string>("preview_base"),
 

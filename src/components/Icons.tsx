@@ -110,6 +110,13 @@ export const CloseIcon = ({ size = 14, className }: IconProps) => (
   </svg>
 );
 
+export const RestoreIcon = ({ size = 14, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="M3 8a5 5 0 1 0 1.6-3.7" />
+    <path d="M3 2.6V5.6h3" />
+  </svg>
+);
+
 export const SunIcon = ({ size = 14, className }: IconProps) => (
   <svg {...base(size)} className={className}>
     <circle cx="8" cy="8" r="3.1" />

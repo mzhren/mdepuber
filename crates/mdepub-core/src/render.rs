@@ -3,7 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-use mdbook_core::book::Book;
+use std::collections::HashSet;
+
+use mdbook_core::book::{Book, BookItem};
 use mdbook_core::config::Config;
 use mdbook_driver::MDBook;
 use mdbook_html::HtmlHandlebars;
@@ -39,6 +41,67 @@ impl Preprocessor for FrontMatterPreprocessor {
         });
         Ok(book)
     }
+}
+
+/// Drops chapters the user removed from the workspace file list.
+///
+/// This is deliberately a *render-time* filter rather than something that edits
+/// `SUMMARY.md`: the source files on disk are never modified, and the exclusion
+/// applies uniformly to the HTML preview, the PDF and the EPUB.
+struct ExclusionPreprocessor {
+    /// Normalised, source-relative chapter paths.
+    excluded: HashSet<String>,
+}
+
+impl ExclusionPreprocessor {
+    fn new(excluded: &[String]) -> Self {
+        Self {
+            excluded: excluded.iter().map(|path| normalise_rel(path)).collect(),
+        }
+    }
+
+    fn is_excluded(&self, chapter: &mdbook_core::book::Chapter) -> bool {
+        // `source_path` is the real file name (`README.md`), while `path` has
+        // already been rewritten by mdBook's index preprocessor (`index.md`).
+        // Match against either so exclusions survive that rewrite.
+        [chapter.source_path.as_ref(), chapter.path.as_ref()]
+            .into_iter()
+            .flatten()
+            .any(|path| self.excluded.contains(&normalise_rel(&path.to_string_lossy())))
+    }
+}
+
+impl Preprocessor for ExclusionPreprocessor {
+    fn name(&self) -> &str {
+        "mdepuber-exclude"
+    }
+
+    fn run(&self, _ctx: &PreprocessorContext, mut book: Book) -> anyhow::Result<Book> {
+        fn retain(items: &mut Vec<BookItem>, pre: &ExclusionPreprocessor) -> usize {
+            let before = items.len();
+            items.retain(|item| match item {
+                BookItem::Chapter(chapter) => !pre.is_excluded(chapter),
+                _ => true,
+            });
+            let mut removed = before - items.len();
+            for item in items.iter_mut() {
+                if let BookItem::Chapter(chapter) = item {
+                    removed += retain(&mut chapter.sub_items, pre);
+                }
+            }
+            removed
+        }
+        retain(&mut book.items, self);
+        Ok(book)
+    }
+}
+
+/// Normalise a relative path for comparison: forward slashes, no `./` prefix.
+fn normalise_rel(path: &str) -> String {
+    path.replace('\\', "/")
+        .trim_start_matches("./")
+        .trim_start_matches('/')
+        .to_string()
 }
 
 /// A book that has been loaded and rendered by mdBook.
@@ -78,6 +141,7 @@ pub fn build_book(
     meta: &BookMeta,
     cache_root: &Path,
     theme_mode: ThemeMode,
+    excluded: &[String],
     progress: ProgressFn<'_>,
 ) -> Result<BuiltBook> {
     progress(Progress::new("prepare", "正在准备 mdBook 项目…", 8));
@@ -91,6 +155,9 @@ pub fn build_book(
     let mut mdbook = MDBook::load_with_config(&project.root, config).map_err(Error::MdBook)?;
     // Runs for every renderer (HTML for the preview/PDF, and our EPUB path).
     mdbook.with_preprocessor(FrontMatterPreprocessor);
+    if !excluded.is_empty() {
+        mdbook.with_preprocessor(ExclusionPreprocessor::new(excluded));
+    }
 
     progress(Progress::new("render", "正在使用 mdBook 渲染 HTML…", 55));
     mdbook

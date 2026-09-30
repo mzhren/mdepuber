@@ -247,6 +247,7 @@ pub fn export_book(
         &meta,
         cache_root,
         ThemeMode::Project,
+        &req.excluded,
         &build_band,
     )?;
     warnings.extend(built.warnings.clone());
@@ -300,6 +301,7 @@ pub fn build_preview(
     source: &Path,
     meta: &BookMeta,
     cache_root: &Path,
+    excluded: &[String],
     progress: ProgressFn<'_>,
 ) -> Result<BuiltBook> {
     let ws = workspace::open(source)?;
@@ -310,6 +312,7 @@ pub fn build_preview(
         &meta,
         cache_root,
         ThemeMode::FollowSystem,
+        excluded,
         progress,
     )
 }

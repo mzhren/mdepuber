@@ -639,7 +639,9 @@ pub fn export(
     let mut chapters: Vec<FlatChapter> = Vec::new();
     flatten(&built.book.items, 1, &mut chapters);
     if chapters.is_empty() {
-        return Err(Error::Epub("mdBook 书籍里没有任何章节".to_string()));
+        return Err(Error::Epub(
+            "这本书没有任何章节可导出。如果刚刚排除了章节，请至少保留一个。".to_string(),
+        ));
     }
     for (i, ch) in chapters.iter_mut().enumerate() {
         ch.href = format!("chapter-{:03}.xhtml", i + 1);

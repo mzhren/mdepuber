@@ -26,6 +26,8 @@ interface PreviewPaneProps {
   sourceRoot: string;
   /** `mdepub://localhost` (or the http equivalent). */
   sourceBase: string;
+  /** Chapter paths removed from the book (source-relative). */
+  excluded: Set<string>;
 }
 
 export function PreviewPane({
@@ -45,8 +47,16 @@ export function PreviewPane({
   onOpenLinkedFile,
   sourceRoot,
   sourceBase,
+  excluded,
 }: PreviewPaneProps) {
   const articleRef = useRef<HTMLDivElement>(null);
+  const isExcluded =
+    chapter !== null &&
+    excluded.has(
+      sourceRoot && chapter.path.startsWith(`${sourceRoot}/`)
+        ? chapter.path.slice(sourceRoot.length + 1)
+        : chapter.path,
+    );
 
   const html = useMemo(() => {
     if (!doc?.body) return "";
@@ -112,6 +122,11 @@ export function PreviewPane({
               <span className="sep">·</span>
               {chapterIndex + 1} / {chapterTotal}
             </>
+          )}
+          {chapter && isExcluded && (
+            <span className="crumb-badge" title="这一章不会出现在导出的电子书里">
+              已从书籍中排除
+            </span>
           )}
         </div>
 

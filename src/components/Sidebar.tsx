@@ -2,7 +2,7 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { BookMeta, Workspace } from "../types";
-import { FileTree } from "./FileTree";
+import { FileTree, toRelative } from "./FileTree";
 import { BookIcon, CloseIcon, FolderOpenIcon } from "./Icons";
 import { Section } from "./Section";
 import { shortenPath } from "../lib/api";
@@ -13,6 +13,10 @@ interface SidebarProps {
   activeChapterPath: string | null;
   onMetaChange: (patch: Partial<BookMeta>) => void;
   onSelectFile: (path: string, isMarkdown: boolean) => void;
+  /** Chapter paths removed from the book (source-relative). */
+  excluded: Set<string>;
+  onToggleExclude: (rel: string) => void;
+  onRestoreAll: () => void;
   /** Insert a contents page at the front of the exported book. */
   tocPage: boolean;
   tocDepth: number;
@@ -38,6 +42,9 @@ export function Sidebar({
   activeChapterPath,
   onMetaChange,
   onSelectFile,
+  excluded,
+  onToggleExclude,
+  onRestoreAll,
   tocPage,
   tocDepth,
   onTocChange,
@@ -101,24 +108,41 @@ export function Sidebar({
           <>
             <Section
               title="章节大纲"
-              count={`${workspace.chapters.length} 章`}
+              count={
+                excluded.size > 0
+                  ? `${workspace.chapters.length - excluded.size} / ${workspace.chapters.length} 章`
+                  : `${workspace.chapters.length} 章`
+              }
               defaultOpen
             >
-              <div className="tree">
-                {workspace.chapters.map((chapter) => (
-                  <button
-                    key={chapter.id}
-                    type="button"
-                    className={`tree-row${
-                      chapter.path === activeChapterPath ? " is-active" : ""
-                    }`}
-                    style={{ paddingLeft: 8 + (chapter.level - 1) * 12 }}
-                    onClick={() => onSelectFile(chapter.path, true)}
-                    title={chapter.path}
-                  >
-                    <span className="tree-label">{chapter.title}</span>
+              {excluded.size > 0 && (
+                <div className="excluded-bar">
+                  <span>已排除 {excluded.size} 章</span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={onRestoreAll}>
+                    全部恢复
                   </button>
-                ))}
+                </div>
+              )}
+              <div className="tree">
+                {workspace.chapters.map((chapter) => {
+                  const rel = toRelative(workspace.srcDir, chapter.path);
+                  const isExcluded = excluded.has(rel);
+                  return (
+                    <button
+                      key={chapter.id}
+                      type="button"
+                      className={`tree-row tree-row-plain${
+                        chapter.path === activeChapterPath ? " is-active" : ""
+                      }${isExcluded ? " is-excluded" : ""}`}
+                      style={{ paddingLeft: 8 + (chapter.level - 1) * 12 }}
+                      onClick={() => onSelectFile(chapter.path, true)}
+                      title={isExcluded ? `${chapter.path}（已排除）` : chapter.path}
+                    >
+                      <span className="tree-label">{chapter.title}</span>
+                      {isExcluded && <span className="tree-badge tree-badge-warn">已排除</span>}
+                    </button>
+                  );
+                })}
               </div>
             </Section>
 
@@ -126,7 +150,10 @@ export function Sidebar({
               <FileTree
                 nodes={workspace.tree}
                 activePath={activeChapterPath}
+                srcDir={workspace.srcDir}
+                excluded={excluded}
                 onSelect={onSelectFile}
+                onToggleExclude={onToggleExclude}
               />
             </Section>
 

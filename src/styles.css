@@ -515,9 +515,9 @@ select {
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   width: 100%;
-  padding: 4px 8px;
+  padding: 0;
   border-radius: 5px;
   color: var(--text-secondary);
   text-align: left;
@@ -526,6 +526,98 @@ select {
 .tree-row:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+/* Rows that are a single clickable surface (directories, the outline). */
+.tree-row-plain {
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.tree-row-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  color: inherit;
+  text-align: left;
+}
+
+.tree-row-plain.tree-row-main {
+  padding: 0;
+}
+
+.tree-row-action {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 22px;
+  flex: none;
+  margin-right: 4px;
+  border-radius: 4px;
+  color: var(--text-disabled);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+.tree-row:hover .tree-row-action,
+.tree-row-action:focus-visible {
+  opacity: 1;
+}
+
+.tree-row-action:hover {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+/* Excluded from the book — files stay on disk, they just do not get exported. */
+.tree-row.is-excluded .tree-label {
+  color: var(--text-disabled);
+  text-decoration: line-through;
+}
+
+.tree-row.is-excluded .tree-glyph {
+  opacity: 0.4;
+}
+
+.tree-row.is-excluded .tree-row-action {
+  opacity: 1;
+  color: var(--text-tertiary);
+}
+
+.tree-badge-warn {
+  color: var(--warning);
+  letter-spacing: 0;
+}
+
+.excluded-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 8px;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--notice-warn-bg);
+  border: 1px solid var(--notice-warn-border);
+  color: var(--warning);
+  font-size: 11.5px;
+}
+
+.excluded-bar span {
+  flex: 1;
+}
+
+.crumb-badge {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--notice-warn-bg);
+  border: 1px solid var(--notice-warn-border);
+  color: var(--warning);
+  font-size: 10.5px;
+  font-family: var(--font-ui);
 }
 
 .tree-row.is-active {
