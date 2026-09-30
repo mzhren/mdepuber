@@ -1,0 +1,17 @@
+[package]
+name = "mdepub-cli"
+description = "Headless CLI for mdepub-core (build / export EPUB and PDF without the GUI)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mdepub"
+path = "src/main.rs"
+
+[dependencies]
+mdepub-core = { path = "../mdepub-core" }
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+serde_json.workspace = true

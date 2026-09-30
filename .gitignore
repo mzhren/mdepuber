@@ -1,0 +1,24 @@
+# 构建产物
+/target
+/dist
+node_modules
+src-tauri/target
+src-tauri/gen
+
+# 本地 Cargo 缓存（沙箱环境下自包含构建用）
+/.cargo-home
+
+# 导出的电子书
+*.epub
+*.pdf
+!examples/**/*.pdf
+
+# 编辑器 / 系统
+.DS_Store
+.idea
+.vscode
+*.log
+.runtime/
+
+# pnpm virtual store
+.pnpm-store/

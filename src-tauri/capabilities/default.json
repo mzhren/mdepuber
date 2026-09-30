@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "mdepuber 主窗口所需的权限：文件选择对话框 + 自定义预览协议。",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
+    "dialog:default"
+  ]
+}

@@ -1,0 +1,27 @@
+[package]
+name = "mdepuber"
+description = "Markdown / mdBook to EPUB / PDF desktop studio"
+authors = ["mdepuber"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "mdepuber_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde.workspace = true
+serde_json.workspace = true
+mdepub-core = { path = "../crates/mdepub-core" }
+mime_guess = "2"
+percent-encoding = "2"
+
+[dev-dependencies]
+tempfile = "3"

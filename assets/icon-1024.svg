@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>mdepuber — Markdown to EPUB / PDF</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4d6bfe"/>
+      <stop offset="1" stop-color="#8a5cf6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- app tile, inset to Apple's macOS icon grid -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+
+  <!-- a Markdown document with a folded corner -->
+  <path d="M 262,158 H 674 L 826,310 V 810 A 48,48 0 0 1 778,858 H 262 A 48,48 0 0 1 214,810 V 206 A 48,48 0 0 1 262,158 Z"
+        fill="#ffffff"/>
+  <path d="M 674,158 L 826,310 H 674 Z" fill="#c9d4ff"/>
+
+  <!-- the M of Markdown -->
+  <g transform="translate(285,285) scale(4.7)">
+    <path fill="#4d6bfe"
+          d="M 15,80 L 15,20 L 33,20 L 50,52 L 67,20 L 85,20 L 85,80 L 71,80 L 71,42 L 56,72 L 44,72 L 29,42 L 29,80 Z"/>
+  </g>
+</svg>

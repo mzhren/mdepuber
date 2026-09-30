@@ -1,0 +1,12 @@
+[book]
+title = "mdBook 项目示例"
+authors = ["项目作者"]
+language = "zh-CN"
+description = "一个带有 book.toml 的真实 mdBook 项目"
+
+[output.html]
+default-theme = "navy"
+mathjax-support = true
+
+# 下面的输出后端会被 mdepuber 忽略（并给出提示）
+[output.latex]

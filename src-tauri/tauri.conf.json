@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "mdepuber",
+  "version": "0.1.0",
+  "identifier": "com.mdepuber.studio",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "mdepuber",
+        "width": 1440,
+        "height": 940,
+        "minWidth": 1000,
+        "minHeight": 640,
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 16, "y": 20 },
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "Productivity",
+    "shortDescription": "Markdown / mdBook 电子书转换器",
+    "longDescription": "使用 mdBook 作为渲染内核，把 Markdown 文件或包含 Markdown 的文件夹导出为 EPUB / PDF 电子书。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {}
+}
