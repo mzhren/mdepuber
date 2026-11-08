@@ -19,6 +19,8 @@ import type {
 import { defaultBookMeta, defaultEpubOptions, defaultPdfOptions, emptyFrontMatter } from "./types";
 import { api, onProgress } from "./lib/api";
 import { countWords, splitFrontMatter } from "./lib/markdown";
+import { orderChapters } from "./lib/chapters";
+import { toRelative } from "./components/FileTree";
 import { Sidebar } from "./components/Sidebar";
 import { PreviewPane, useChapterIndex, type PreviewMode } from "./components/PreviewPane";
 import { EditorPane } from "./components/EditorPane";
@@ -70,6 +72,8 @@ export default function App() {
   const [formats, setFormats] = useState<BookFormat[]>(["epub"]);
   /** Chapter paths removed from the book (source-relative). Files stay on disk. */
   const [excluded, setExcluded] = useState<Set<string>>(() => new Set());
+  /** Chapter order dragged in the outline (source-relative). Null = natural. */
+  const [chapterOrder, setChapterOrder] = useState<string[] | null>(null);
   const [tocPage, setTocPage] = useState(false);
   const [tocDepth, setTocDepth] = useState(3);
   const [outputDir, setOutputDir] = useState("");
@@ -314,6 +318,7 @@ export default function App() {
       setBaseName(ws.title);
       setFormats(["epub"]);
       setExcluded(new Set());
+      setChapterOrder(null);
 
       const dir = await api.defaultOutputDir(ws.root).catch(() => "");
       setOutputDir(dir);
@@ -411,7 +416,22 @@ export default function App() {
 
   /* ------------------------------------------------------------- navigation */
 
-  const chapters = useMemo(() => workspace?.chapters ?? [], [workspace]);
+  const relOf = useCallback(
+    (path: string) => (workspace ? toRelative(workspace.srcDir, path) : path),
+    [workspace],
+  );
+
+  /** Outline in display order — the natural order until the user drags. */
+  const chapters = useMemo(
+    () => (workspace ? orderChapters(workspace.chapters, relOf, chapterOrder) : []),
+    [workspace, relOf, chapterOrder],
+  );
+
+  const handleReorder = useCallback((order: string[]) => {
+    setChapterOrder(order);
+    // The mdBook preview is a built artefact; it has to be rebuilt to follow.
+    setPreviewInfo(null);
+  }, []);
   const chapterIndex = useChapterIndex(chapters, chapter);
 
   const gotoOffset = useCallback(
@@ -524,7 +544,7 @@ export default function App() {
     setStatus({ kind: "busy", message: "正在用 mdBook 构建整书预览…" });
     setProgress(null);
     try {
-      const info = await api.buildPreview(workspace.root, meta, [...excluded]);
+      const info = await api.buildPreview(workspace.root, meta, [...excluded], chapterOrder ?? []);
       setPreviewInfo(info);
       setMode("mdbook");
       setOk(`mdBook 预览已构建：${info.chapterCount} 个章节`);
@@ -534,7 +554,7 @@ export default function App() {
       setPreviewBuilding(false);
       setProgress(null);
     }
-  }, [workspace, meta, excluded, setOk, setErr]);
+  }, [workspace, meta, excluded, chapterOrder, setOk, setErr]);
 
   /* -------------------------------------------------------------------- mode */
 
@@ -561,6 +581,7 @@ export default function App() {
         // unsaved edits); a different chapter loads a fresh buffer.
         if (!edit || edit.path !== chapter.path) void openEditorBuffer(chapter.path);
       }
+      if (next === "mdbook" && !previewInfo && workspace) void buildPreview();
       setMode(next);
     },
     [mode, edit, chapter, previewInfo, workspace, buildPreview, openEditorBuffer],
@@ -583,6 +604,7 @@ export default function App() {
         pdf,
         formats,
         excluded: [...excluded],
+        order: chapterOrder ?? [],
         tocPage,
         tocDepth,
         outputDir,
@@ -601,7 +623,7 @@ export default function App() {
       setBusy(false);
       setProgress(null);
     }
-  }, [workspace, meta, epub, pdf, formats, excluded, tocPage, tocDepth, outputDir, baseName, setOk, setErr]);
+  }, [workspace, meta, epub, pdf, formats, excluded, chapterOrder, tocPage, tocDepth, outputDir, baseName, setOk, setErr]);
 
   const openExportDialog = useCallback(() => {
     setReport(null);
@@ -700,11 +722,13 @@ export default function App() {
             workspace={workspace}
             meta={meta}
             activeChapterPath={chapter?.path ?? null}
+            chapters={chapters}
             onMetaChange={(patch) => setMeta((prev) => ({ ...prev, ...patch }))}
             onSelectFile={handleSelectFile}
             excluded={excluded}
             onToggleExclude={toggleExclude}
             onRestoreAll={restoreAllExcluded}
+            onReorder={handleReorder}
             tocPage={tocPage}
             tocDepth={tocDepth}
             onTocChange={(patch) => {

@@ -296,6 +296,11 @@ pub struct ExportRequest {
     /// Excluded chapters are dropped by a preprocessor before mdBook renders
     /// anything, so the files on disk are never touched.
     pub excluded: Vec<String>,
+    /// Chapter paths (relative to the book source dir, like [`Self::excluded`])
+    /// in the order the user arranged them in the outline. Empty keeps the
+    /// natural order. Applied as a render-time reordering of sibling chapters,
+    /// so the files on disk are never reshuffled.
+    pub order: Vec<String>,
     /// Insert a visible table-of-contents page at the very front of the book
     /// (right after the cover) in addition to the reader's built-in navigation.
     pub toc_page: bool,
@@ -316,6 +321,7 @@ impl Default for ExportRequest {
             pdf: PdfOptions::default(),
             formats: vec![BookFormat::Epub],
             excluded: Vec::new(),
+            order: Vec::new(),
             toc_page: false,
             toc_depth: 3,
             output_dir: String::new(),

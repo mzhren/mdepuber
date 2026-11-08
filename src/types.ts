@@ -127,6 +127,11 @@ export interface ExportRequest {
    * Files stay on disk; they are dropped at render time.
    */
   excluded: string[];
+  /**
+   * Chapter paths in the order arranged by dragging the outline. Empty keeps
+   * the natural order; applied at render time, files on disk are untouched.
+   */
+  order: string[];
   /** Insert a visible contents page at the front of the book. */
   tocPage: boolean;
   /** How many heading levels the contents page lists (1-3). */

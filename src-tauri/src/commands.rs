@@ -140,16 +140,25 @@ pub async fn build_preview(
     source: String,
     meta: BookMeta,
     #[allow(non_snake_case)] excluded: Option<Vec<String>>,
+    #[allow(non_snake_case)] order: Option<Vec<String>>,
 ) -> CmdResult<PreviewInfo> {
     let excluded = excluded.unwrap_or_default();
+    let order = order.unwrap_or_default();
     let cache = cache_root(&app);
     let emitter = app.clone();
     let source_path = PathBuf::from(&source);
 
     let joined = tauri::async_runtime::spawn_blocking(move || {
-        mdepub_core::build_preview(&source_path, &meta, &cache, &excluded, &|progress: Progress| {
-            let _ = emitter.emit(PROGRESS_EVENT, progress);
-        })
+        mdepub_core::build_preview(
+            &source_path,
+            &meta,
+            &cache,
+            &excluded,
+            &order,
+            &|progress: Progress| {
+                let _ = emitter.emit(PROGRESS_EVENT, progress);
+            },
+        )
     })
     .await;
 

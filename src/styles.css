@@ -1603,3 +1603,25 @@ select {
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
+
+/* ------------------------------------------------------- outline drag & drop */
+
+.tree-row-plain {
+  cursor: grab;
+}
+
+.tree-row-plain:active {
+  cursor: grabbing;
+}
+
+.tree-row.is-dragging {
+  opacity: 0.35;
+}
+
+.tree-row.is-drop-above {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.tree-row.is-drop-below {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}

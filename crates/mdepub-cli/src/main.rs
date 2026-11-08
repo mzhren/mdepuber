@@ -226,6 +226,8 @@ fn export(
         },
         formats,
         excluded,
+        // The CLI has no outline to drag; keep the natural chapter order.
+        order: Vec::new(),
         toc_page,
         toc_depth,
         output_dir: out.map(|o| o.display().to_string()).unwrap_or_default(),
