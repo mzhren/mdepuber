@@ -127,14 +127,6 @@ impl OrderPreprocessor {
                 .collect(),
         }
     }
-
-    fn rank_of(&self, chapter: &mdbook_core::book::Chapter) -> usize {
-        [chapter.source_path.as_ref(), chapter.path.as_ref()]
-            .into_iter()
-            .flatten()
-            .find_map(|path| self.rank.get(&normalise_rel(&path.to_string_lossy())).copied())
-            .unwrap_or(usize::MAX)
-    }
 }
 
 impl Preprocessor for OrderPreprocessor {
