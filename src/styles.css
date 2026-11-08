@@ -245,7 +245,9 @@ select {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 12px 0 84px; /* room for the macOS traffic lights */
+  /* Left inset puts the brand right next to the macOS traffic lights (which
+     occupy roughly x 16…80 on current macOS) with a comfortable ~20px gap. */
+  padding: 0 12px 0 100px;
   background: var(--bg-chrome);
   border-bottom: 1px solid var(--border);
   user-select: none;
