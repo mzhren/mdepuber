@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 
 import type { ChapterDoc, ChapterEntry, FrontMatter, PreviewInfo } from "../types";
-import { renderMarkdown, rewriteRelativeUrls } from "../lib/markdown";
 import { ChevronIcon, RefreshIcon } from "./Icons";
+import { RenderedBody } from "./RenderedBody";
 
 export type PreviewMode = "render" | "mdbook";
 
@@ -49,7 +49,6 @@ export function PreviewPane({
   sourceBase,
   excluded,
 }: PreviewPaneProps) {
-  const articleRef = useRef<HTMLDivElement>(null);
   const isExcluded =
     chapter !== null &&
     excluded.has(
@@ -57,54 +56,6 @@ export function PreviewPane({
         ? chapter.path.slice(sourceRoot.length + 1)
         : chapter.path,
     );
-
-  const html = useMemo(() => {
-    if (!doc?.body) return "";
-    const rendered = renderMarkdown(doc.body);
-    if (!chapter || !sourceRoot) return rendered;
-    const chapterDir = chapter.path.slice(0, chapter.path.lastIndexOf("/"));
-    return rewriteRelativeUrls(rendered, {
-      chapterDir,
-      sourceRoot,
-      sourceBase,
-      resolveChapterLink: resolveLink,
-    });
-  }, [doc?.body, chapter, sourceRoot, sourceBase, resolveLink]);
-
-  // Scroll to the top whenever the visible chapter changes.
-  useEffect(() => {
-    articleRef.current?.parentElement?.scrollTo({ top: 0 });
-  }, [chapter?.path]);
-
-  const handleArticleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    const target = (event.target as HTMLElement).closest("a");
-    if (!target) return;
-    const href = target.getAttribute("href");
-    if (!href) return;
-
-    if (href.startsWith("#")) {
-      event.preventDefault();
-      const id = decodeURIComponent(href.slice(1));
-      articleRef.current
-        ?.querySelector(`[id="${CSS.escape(id)}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-
-    // Rewritten workspace assets are served by the app itself, so leave those
-    // (and any external link) for the webview to open.
-    if (!/\.md$/i.test(href.split("#")[0])) {
-      const resolved = resolveLink(href);
-      if (!resolved) return;
-      event.preventDefault();
-      onOpenLinkedFile(resolved);
-      return;
-    }
-
-    event.preventDefault();
-    const resolved = resolveLink(href);
-    if (resolved) onOpenLinkedFile(resolved);
-  };
 
   return (
     <section className="preview">
@@ -176,10 +127,15 @@ export function PreviewPane({
             {loadingChapter ? (
               <div className="preview-placeholder">正在读取章节…</div>
             ) : chapter ? (
-              <div className="preview-article" ref={articleRef} onClick={handleArticleClick}>
-                {doc && <FrontMatterStrip frontMatter={doc.frontMatter} />}
-                <div dangerouslySetInnerHTML={{ __html: html }} />
-              </div>
+              <RenderedBody
+                body={doc?.body ?? ""}
+                chapterPath={chapter.path}
+                sourceRoot={sourceRoot}
+                sourceBase={sourceBase}
+                resolveLink={resolveLink}
+                onOpenLinkedFile={onOpenLinkedFile}
+                header={doc && <FrontMatterStrip frontMatter={doc.frontMatter} />}
+              />
             ) : (
               <div className="preview-placeholder">
                 <div>

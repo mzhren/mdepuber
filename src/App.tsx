@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -18,9 +18,10 @@ import type {
 } from "./types";
 import { defaultBookMeta, defaultEpubOptions, defaultPdfOptions, emptyFrontMatter } from "./types";
 import { api, onProgress } from "./lib/api";
-import { countWords } from "./lib/markdown";
+import { countWords, splitFrontMatter } from "./lib/markdown";
 import { Sidebar } from "./components/Sidebar";
 import { PreviewPane, useChapterIndex, type PreviewMode } from "./components/PreviewPane";
+import { EditorPane } from "./components/EditorPane";
 import { ExportDialog } from "./components/ExportDialog";
 import { StatusBar, type StatusKind } from "./components/StatusBar";
 import { EmptyState } from "./components/EmptyState";
@@ -33,6 +34,29 @@ import {
   resolveInitialTheme,
   type Theme,
 } from "./lib/theme";
+
+type WorkspaceViewMode = PreviewMode | "edit";
+
+/** Refresh a chapter's title/words in the workspace after a successful save. */
+function patchWorkspaceStats(ws: Workspace, path: string, doc: ChapterDoc | null): Workspace {
+  if (!doc) return ws;
+  let touched = false;
+  const chapters = ws.chapters.map((entry) => {
+    if (entry.path !== path) return entry;
+    touched = true;
+    return {
+      ...entry,
+      title: doc.frontMatter.title?.trim() || entry.title,
+      words: countWords(doc.body),
+    };
+  });
+  if (!touched) return ws;
+  return {
+    ...ws,
+    chapters,
+    totalWords: chapters.reduce((sum, entry) => sum + entry.words, 0),
+  };
+}
 
 export default function App() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -51,9 +75,25 @@ export default function App() {
   const [outputDir, setOutputDir] = useState("");
   const [baseName, setBaseName] = useState("");
 
-  const [mode, setMode] = useState<PreviewMode>("render");
+  const [mode, setMode] = useState<WorkspaceViewMode>("render");
   const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null);
   const [previewBuilding, setPreviewBuilding] = useState(false);
+
+  /* ------------------------------------------------------------- edit buffer */
+  /** The chapter currently open in the editor, with its dirty baseline. */
+  const [edit, setEdit] = useState<{ path: string; raw: string } | null>(null);
+  const [editDirty, setEditDirty] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  /** Bumped on every buffer (re)load so the CodeMirror view remounts. */
+  const [editVersion, setEditVersion] = useState(0);
+  // Refs mirror the buffer for code that must not wait for React state.
+  const editPathRef = useRef<string | null>(null);
+  const editDirtyRef = useRef(false);
+  const editTextRef = useRef("");
+  const editSavingRef = useRef(false);
+  const editorSeqRef = useRef(0);
+  const modeRef = useRef<WorkspaceViewMode>(mode);
+  const chapterPathRef = useRef<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,9 +113,116 @@ export default function App() {
   const contentCache = useRef(new Map<string, ChapterDoc>());
   const [sourceBase, setSourceBase] = useState("mdepub://localhost");
 
+  // Keep a synchronous mirror of the mode for callbacks registered once.
+  modeRef.current = mode;
+  chapterPathRef.current = chapter?.path ?? null;
+
   const setOk = useCallback((message: string) => setStatus({ kind: "ok", message }), []);
   const setIdle = useCallback((message: string) => setStatus({ kind: "idle", message }), []);
   const setErr = useCallback((message: string) => setStatus({ kind: "error", message }), []);
+
+  /* ------------------------------------------------------------- edit buffer */
+
+  const discardEditBuffer = useCallback(() => {
+    editPathRef.current = null;
+    editDirtyRef.current = false;
+    editTextRef.current = "";
+    setEdit(null);
+    setEditDirty(false);
+  }, []);
+
+  const confirmDiscard = useCallback(async () => {
+    try {
+      return await confirm("当前章节有未保存的修改，丢弃修改并继续吗？", {
+        title: "未保存的修改",
+        kind: "warning",
+        okLabel: "丢弃修改",
+        cancelLabel: "取消",
+      });
+    } catch {
+      return false;
+    }
+  }, []);
+
+  /** Load the raw file into the editor buffer (front matter included). */
+  const openEditorBuffer = useCallback(
+    async (path: string) => {
+      const seq = (editorSeqRef.current += 1);
+      try {
+        const raw = await api.readChapterRaw(path);
+        // A newer open (rapid chapter switching) supersedes this one.
+        if (seq !== editorSeqRef.current) return;
+        editPathRef.current = path;
+        editDirtyRef.current = false;
+        editTextRef.current = raw;
+        setEdit({ path, raw });
+        setEditDirty(false);
+        setEditVersion((version) => version + 1);
+      } catch (error) {
+        if (seq !== editorSeqRef.current) return;
+        setErr(`无法打开编辑器：${(error as Error).message}`);
+      }
+    },
+    [setErr],
+  );
+
+  const handleEditDirty = useCallback((dirty: boolean) => {
+    editDirtyRef.current = dirty;
+    setEditDirty(dirty);
+  }, []);
+
+  /** Mirror the buffer's text into a ref the save path can read synchronously. */
+  const handleEditText = useCallback((text: string) => {
+    editTextRef.current = text;
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    const buffer = edit;
+    if (!buffer || !editDirtyRef.current || editSavingRef.current) return;
+    // Snapshot at call time: keystrokes typed while the write is in flight
+    // stay dirty instead of being silently marked as saved.
+    const textToSave = editTextRef.current;
+    editSavingRef.current = true;
+    setEditSaving(true);
+    try {
+      await api.writeChapter(buffer.path, textToSave);
+      // Refresh the preview cache + sidebar stats from what actually landed on
+      // disk, and retire any mdBook preview built from the old contents.
+      const doc = await api.readChapter(buffer.path).catch(() => null);
+      if (doc) {
+        contentCache.current.set(buffer.path, doc);
+        // The reading preview renders `chapterDoc`, not the cache — refresh it
+        // too, otherwise switching back to 章节预览 shows the pre-save text.
+        if (chapterPathRef.current === buffer.path) setChapterDoc(doc);
+      }
+      setEdit((prev) =>
+        prev && prev.path === buffer.path ? { ...prev, raw: textToSave } : prev,
+      );
+      editDirtyRef.current = false;
+      setEditDirty(false);
+      setWorkspace((ws) => (ws ? patchWorkspaceStats(ws, buffer.path, doc) : ws));
+      setPreviewInfo(null);
+      setOk(`已保存「${buffer.path.split("/").pop()}」`);
+    } catch (error) {
+      setErr(`保存失败：${(error as Error).message}`);
+    } finally {
+      editSavingRef.current = false;
+      setEditSaving(false);
+    }
+  }, [edit, setOk, setErr]);
+
+  // ⌘S / Ctrl+S saves in edit mode, wherever the focus currently sits.
+  useEffect(() => {
+    if (mode !== "edit") return;
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void saveEdit();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [mode, saveEdit]);
 
   /* ----------------------------------------------------------------- theme */
 
@@ -115,7 +262,21 @@ export default function App() {
 
   const loadChapter = useCallback(
     async (target: ChapterEntry) => {
+      // Moving to a different chapter with unsaved edits needs an explicit
+      // "discard" from the user first.
+      if (editPathRef.current && editPathRef.current !== target.path && editDirtyRef.current) {
+        const proceed = await confirmDiscard();
+        if (!proceed) return;
+        discardEditBuffer();
+      }
       setChapter(target);
+      // In edit mode the buffer follows the chapter (the doc below keeps the
+      // preview cache warm for when the user switches back to reading). Never
+      // reload the buffer for the chapter already on screen — that would wipe
+      // unsaved edits without a prompt.
+      if (modeRef.current === "edit" && editPathRef.current !== target.path) {
+        void openEditorBuffer(target.path);
+      }
       const cached = contentCache.current.get(target.path);
       if (cached !== undefined) {
         setChapterDoc(cached);
@@ -135,7 +296,7 @@ export default function App() {
         setLoadingChapter(false);
       }
     },
-    [],
+    [confirmDiscard, discardEditBuffer, openEditorBuffer],
   );
 
   const adoptWorkspace = useCallback(
@@ -147,6 +308,8 @@ export default function App() {
       setPreviewBuilding(false);
       setReport(null);
       setExportError(null);
+      discardEditBuffer();
+      modeRef.current = "render";
       setMode("render");
       setBaseName(ws.title);
       setFormats(["epub"]);
@@ -170,11 +333,17 @@ export default function App() {
         );
       }
     },
-    [loadChapter, setOk],
+    [loadChapter, discardEditBuffer, setOk],
   );
 
   const openPath = useCallback(
     async (path: string) => {
+      // Opening another book must not silently drop unsaved edits.
+      if (editDirtyRef.current) {
+        const proceed = await confirmDiscard();
+        if (!proceed) return;
+        discardEditBuffer();
+      }
       setIdle("正在读取…");
       try {
         const ws = await api.openWorkspace(path);
@@ -183,7 +352,7 @@ export default function App() {
         setErr((error as Error).message);
       }
     },
-    [adoptWorkspace, setIdle, setErr],
+    [adoptWorkspace, confirmDiscard, discardEditBuffer, setIdle, setErr],
   );
 
   // Open a path passed on the command line ("Open With", drag onto the Dock
@@ -293,6 +462,12 @@ export default function App() {
         return;
       }
       void (async () => {
+        // Same unsaved-edit guard as chapter navigation.
+        if (editPathRef.current && editPathRef.current !== path && editDirtyRef.current) {
+          const proceed = await confirmDiscard();
+          if (!proceed) return;
+          discardEditBuffer();
+        }
         try {
           const doc = await api.readChapter(path);
           contentCache.current.set(path, doc);
@@ -306,12 +481,15 @@ export default function App() {
             words: countWords(doc.body),
           });
           setChapterDoc(doc);
+          if (modeRef.current === "edit" && editPathRef.current !== path) {
+            void openEditorBuffer(path);
+          }
         } catch (error) {
           setErr((error as Error).message);
         }
       })();
     },
-    [chapters, loadChapter, setIdle, setErr],
+    [chapters, loadChapter, confirmDiscard, discardEditBuffer, openEditorBuffer, setIdle, setErr],
   );
 
   /** Resolve a relative link inside a chapter to an absolute path. */
@@ -357,6 +535,36 @@ export default function App() {
       setProgress(null);
     }
   }, [workspace, meta, excluded, setOk, setErr]);
+
+  /* -------------------------------------------------------------------- mode */
+
+  const switchMode = useCallback(
+    (next: WorkspaceViewMode) => {
+      if (next === mode) {
+        if (next === "mdbook" && !previewInfo && workspace) void buildPreview();
+        return;
+      }
+      if (mode === "edit" && edit && editDirtyRef.current && next !== "edit") {
+        // The reading preview should show what's in the buffer, not the last
+        // saved snapshot.
+        const parsed = splitFrontMatter(editTextRef.current);
+        const doc: ChapterDoc = {
+          body: parsed.body,
+          frontMatter: { ...emptyFrontMatter(), format: parsed.format },
+        };
+        setChapterDoc(doc);
+        contentCache.current.set(edit.path, doc);
+      }
+      if (next === "edit") {
+        if (!chapter) return;
+        // Re-entering the editor on the same chapter keeps its buffer (and any
+        // unsaved edits); a different chapter loads a fresh buffer.
+        if (!edit || edit.path !== chapter.path) void openEditorBuffer(chapter.path);
+      }
+      setMode(next);
+    },
+    [mode, edit, chapter, previewInfo, workspace, buildPreview, openEditorBuffer],
+  );
 
   /* ----------------------------------------------------------------- export */
 
@@ -450,18 +658,24 @@ export default function App() {
             <button
               type="button"
               className={mode === "render" ? "is-active" : ""}
-              onClick={() => setMode("render")}
+              onClick={() => switchMode("render")}
               disabled={!workspace}
             >
               章节预览
             </button>
             <button
               type="button"
+              className={mode === "edit" ? "is-active" : ""}
+              onClick={() => switchMode("edit")}
+              disabled={!workspace || !chapter}
+              title="编辑当前章节的 Markdown 源文件"
+            >
+              编辑{mode !== "edit" && editDirty ? " •" : ""}
+            </button>
+            <button
+              type="button"
               className={mode === "mdbook" ? "is-active" : ""}
-              onClick={() => {
-                setMode("mdbook");
-                if (!previewInfo && workspace) void buildPreview();
-              }}
+              onClick={() => switchMode("mdbook")}
               disabled={!workspace}
             >
               mdBook 预览
@@ -501,25 +715,53 @@ export default function App() {
         )}
 
         {workspace ? (
-          <PreviewPane
-            mode={mode}
-            chapter={chapter}
-            doc={chapterDoc}
-            loadingChapter={loadingChapter}
-            workspaceTitle={workspace.title}
-            chapterIndex={chapterIndex}
-            chapterTotal={chapters.length}
-            previewInfo={previewInfo}
-            previewBuilding={previewBuilding}
-            onBuildPreview={buildPreview}
-            onPrev={() => gotoOffset(-1)}
-            onNext={() => gotoOffset(1)}
-            resolveLink={resolveLink}
-            onOpenLinkedFile={(path) => handleSelectFile(path, true)}
-            sourceRoot={workspace.srcDir}
-            sourceBase={sourceBase}
-            excluded={excluded}
-          />
+          mode === "edit" ? (
+            edit ? (
+              <EditorPane
+                key={`${edit.path}:${editVersion}`}
+                path={edit.path}
+                initialRaw={edit.raw}
+                saving={editSaving}
+                workspaceTitle={workspace.title}
+                chapterTitle={chapter?.title ?? ""}
+                chapterIndex={chapterIndex}
+                chapterTotal={chapters.length}
+                sourceRoot={workspace.srcDir}
+                sourceBase={sourceBase}
+                resolveLink={resolveLink}
+                onOpenLinkedFile={(path) => handleSelectFile(path, true)}
+                onDirtyChange={handleEditDirty}
+                onTextChange={handleEditText}
+                onSaveRequest={() => void saveEdit()}
+              />
+            ) : (
+              <section className="preview">
+                <div className="preview-stage">
+                  <div className="preview-placeholder">正在读取文件…</div>
+                </div>
+              </section>
+            )
+          ) : (
+            <PreviewPane
+              mode={mode}
+              chapter={chapter}
+              doc={chapterDoc}
+              loadingChapter={loadingChapter}
+              workspaceTitle={workspace.title}
+              chapterIndex={chapterIndex}
+              chapterTotal={chapters.length}
+              previewInfo={previewInfo}
+              previewBuilding={previewBuilding}
+              onBuildPreview={buildPreview}
+              onPrev={() => gotoOffset(-1)}
+              onNext={() => gotoOffset(1)}
+              resolveLink={resolveLink}
+              onOpenLinkedFile={(path) => handleSelectFile(path, true)}
+              sourceRoot={workspace.srcDir}
+              sourceBase={sourceBase}
+              excluded={excluded}
+            />
+          )
         ) : (
           <EmptyState
             onOpenFile={openFile}

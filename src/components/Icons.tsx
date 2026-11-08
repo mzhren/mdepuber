@@ -129,3 +129,11 @@ export const MoonIcon = ({ size = 14, className }: IconProps) => (
     <path d="M13.4 9.6A5.6 5.6 0 0 1 6.4 2.6a5.6 5.6 0 1 0 7 7Z" />
   </svg>
 );
+
+export const SaveIcon = ({ size = 14, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="M13 5.5 10.5 3H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1Z" />
+    <path d="M5.5 3v3h5V3" />
+    <path d="M5.5 13v-3.5h5V13" />
+  </svg>
+);

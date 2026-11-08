@@ -40,6 +40,13 @@ export const api = {
   /** Body (front matter stripped) plus the parsed header. */
   readChapter: (path: string) => call<ChapterDoc>("read_chapter", { path }),
 
+  /** Untouched file contents (front matter included), for the editor. */
+  readChapterRaw: (path: string) => call<string>("read_chapter_raw", { path }),
+
+  /** Persist edited contents back to disk (atomic write). */
+  writeChapter: (path: string, content: string) =>
+    call<void>("write_chapter", { path, content }),
+
   defaultOutputDir: (source: string) => call<string>("default_output_dir", { source }),
 
   exportBook: (req: ExportRequest) => call<ExportReport>("export_book", { req }),

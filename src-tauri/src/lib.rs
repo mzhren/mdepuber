@@ -96,6 +96,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_workspace,
             commands::read_chapter,
+            commands::read_chapter_raw,
+            commands::write_chapter,
             commands::default_output_dir,
             commands::export_book,
             commands::build_preview,

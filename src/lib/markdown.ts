@@ -220,6 +220,28 @@ export function rewriteRelativeUrls(html: string, targets: RewriteTargets): stri
   return doc.body.innerHTML;
 }
 
+/**
+ * Split a leading YAML (`---`) / TOML (`+++`) front matter block off the raw
+ * file text, mirroring `mdepub-core::frontmatter::locate` — the delimiter must
+ * be the very first line and a matching closer must exist, otherwise the whole
+ * document is body (e.g. one that merely opens with a horizontal rule).
+ */
+export function splitFrontMatter(raw: string): { format: "" | "yaml" | "toml"; body: string } {
+  const lines = raw.split(/^/m);
+  const trimmedEnd = (line: string) => line.replace(/[ \t\r\n]+$/, "");
+  const opener = trimmedEnd(lines[0] ?? "");
+  const format = opener === "---" ? ("yaml" as const) : opener === "+++" ? ("toml" as const) : ("");
+  if (!format) return { format: "", body: raw };
+
+  const closers = format === "yaml" ? ["---", "..."] : ["+++"];
+  for (let i = 1; i < lines.length; i += 1) {
+    if (closers.includes(trimmedEnd(lines[i]))) {
+      return { format, body: lines.slice(i + 1).join("") };
+    }
+  }
+  return { format: "", body: raw };
+}
+
 /** Very small word count that matches the Rust implementation closely enough. */
 export function countWords(text: string): number {
   let count = 0;

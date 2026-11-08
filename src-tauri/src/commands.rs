@@ -72,6 +72,18 @@ pub fn read_chapter(path: String) -> CmdResult<ChapterDoc> {
     Ok(mdepub_core::read_chapter(Path::new(&path))?)
 }
 
+/// Load the untouched file contents (front matter included) for the editor.
+#[tauri::command]
+pub fn read_chapter_raw(path: String) -> CmdResult<String> {
+    Ok(mdepub_core::workspace::read_chapter(Path::new(&path))?)
+}
+
+/// Persist the editor's contents back to the file on disk.
+#[tauri::command]
+pub fn write_chapter(path: String, content: String) -> CmdResult<()> {
+    Ok(mdepub_core::workspace::write_chapter(Path::new(&path), &content)?)
+}
+
 /// Where a book opened from `source` should be written by default.
 #[tauri::command]
 pub fn default_output_dir(source: String) -> String {

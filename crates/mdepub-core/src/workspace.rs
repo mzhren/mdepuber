@@ -218,6 +218,60 @@ pub fn read_chapter(path: &Path) -> Result<String> {
     read_to_string_lossy(path)
 }
 
+/// Save an edited chapter back to disk, atomically.
+///
+/// The temp file lands next to the original so the final rename stays on one
+/// filesystem; the original's permissions are carried over so a swap never
+/// changes how the file can be read or executed.
+pub fn write_chapter(path: &Path, content: &str) -> Result<()> {
+    if !path.exists() {
+        return Err(Error::NotFound(path.display().to_string()));
+    }
+    if !path.is_file() {
+        return Err(Error::Other(format!("不是文件：{}", path.display())));
+    }
+    if !is_markdown(path) {
+        return Err(Error::Other(format!(
+            "只支持保存 Markdown 文件：{}",
+            path.display()
+        )));
+    }
+    let bytes = content.as_bytes();
+    // Mirror the read cap, otherwise the next preview would refuse the file.
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err(Error::Other(format!(
+            "内容过大（{:.1} MB），已停止保存",
+            bytes.len() as f64 / 1_048_576.0
+        )));
+    }
+    let dir = path
+        .parent()
+        .ok_or_else(|| Error::Other(format!("无法定位文件目录：{}", path.display())))?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("chapter");
+    // The pid suffix keeps two app instances from clobbering each other's temp.
+    let tmp = dir.join(format!(".{name}.{}.mdepub-tmp", std::process::id()));
+
+    std::fs::write(&tmp, bytes)?;
+    #[cfg(unix)]
+    if let Ok(meta) = std::fs::metadata(path) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(meta.permissions().mode()));
+    }
+    #[cfg(windows)]
+    if path.exists() {
+        // Windows' rename refuses to overwrite, so make room first.
+        std::fs::remove_file(path)?;
+    }
+    if let Err(error) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(error.into());
+    }
+    Ok(())
+}
+
 /// A raw chapter parsed out of `SUMMARY.md` before mdBook sees it.
 #[derive(Debug, Clone)]
 struct SummaryEntry {
@@ -852,5 +906,24 @@ mod tests {
             ws.meta.cover.as_deref().map(Path::new).map(|p| p.canonicalize().unwrap()),
             Some(expected)
         );
+    }
+
+    #[test]
+    fn write_chapter_round_trips_and_guards() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("note.md");
+        std::fs::write(&file, "# 旧内容\n").unwrap();
+
+        write_chapter(&file, "# 新内容\n\n正文。").unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "# 新内容\n\n正文。");
+        // No temp leftovers in the book directory.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+
+        // Only Markdown files are writable through this path.
+        let other = dir.path().join("cover.png");
+        std::fs::write(&other, b"png").unwrap();
+        assert!(write_chapter(&other, "x").is_err());
+        // Missing targets are rejected instead of recreated.
+        assert!(write_chapter(&dir.path().join("ghost.md"), "x").is_err());
     }
 }
