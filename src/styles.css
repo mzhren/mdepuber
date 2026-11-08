@@ -394,8 +394,19 @@ select {
   background: var(--bg);
 }
 
-.body.is-collapsed {
-  grid-template-columns: 0 1fr;
+/* Sidebar flipped to the right: main content first, workspace second. */
+.body.sidebar-right {
+  grid-template-columns: 1fr var(--sidebar-w);
+}
+
+.body.sidebar-right .sidebar {
+  order: 2;
+}
+
+/* Mirror the panel icon while the workspace sits on the right. */
+.icon-flip {
+  display: inline-flex;
+  transform: scaleX(-1);
 }
 
 /* ----------------------------------------------------------------- sidebar */

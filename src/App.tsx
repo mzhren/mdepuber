@@ -111,7 +111,10 @@ export default function App() {
   });
   const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  /** Which side the workspace sidebar sits on (the panel button flips it). */
+  const [sidebarSide, setSidebarSide] = useState<"left" | "right">(() =>
+    localStorage.getItem("mdepuber.sidebarSide") === "right" ? "right" : "left",
+  );
   const [theme, setTheme] = useState<Theme>(() => resolveInitialTheme());
 
   const contentCache = useRef(new Map<string, ChapterDoc>());
@@ -249,6 +252,18 @@ export default function App() {
 
   const toggleTheme = useCallback(() => {
     setTheme((current) => otherTheme(current));
+  }, []);
+
+  const toggleSidebarSide = useCallback(() => {
+    setSidebarSide((side) => {
+      const next = side === "left" ? "right" : "left";
+      try {
+        localStorage.setItem("mdepuber.sidebarSide", next);
+      } catch {
+        /* private mode etc. — the flip still applies for this session */
+      }
+      return next;
+    });
   }, []);
 
   /* ------------------------------------------------------------ bootstrap */
@@ -660,10 +675,13 @@ export default function App() {
           <button
             type="button"
             className="btn btn-ghost btn-icon"
-            onClick={() => setSidebarOpen((value) => !value)}
-            title={sidebarOpen ? "收起工作区" : "展开工作区"}
+            onClick={toggleSidebarSide}
+            title={sidebarSide === "left" ? "将工作区移到右侧" : "将工作区移到左侧"}
+            aria-label={sidebarSide === "left" ? "将工作区移到右侧" : "将工作区移到左侧"}
           >
-            <PanelIcon size={14} />
+            <span className={sidebarSide === "right" ? "icon-flip" : undefined}>
+              <PanelIcon size={14} />
+            </span>
           </button>
 
           <button
@@ -716,27 +734,25 @@ export default function App() {
         </div>
       </header>
 
-      <div className={`body${sidebarOpen ? "" : " is-collapsed"}`}>
-        {sidebarOpen && (
-          <Sidebar
-            workspace={workspace}
-            meta={meta}
-            activeChapterPath={chapter?.path ?? null}
-            chapters={chapters}
-            onMetaChange={(patch) => setMeta((prev) => ({ ...prev, ...patch }))}
-            onSelectFile={handleSelectFile}
-            excluded={excluded}
-            onToggleExclude={toggleExclude}
-            onRestoreAll={restoreAllExcluded}
-            onReorder={handleReorder}
-            tocPage={tocPage}
-            tocDepth={tocDepth}
-            onTocChange={(patch) => {
-              if (patch.tocPage !== undefined) setTocPage(patch.tocPage);
-              if (patch.tocDepth !== undefined) setTocDepth(patch.tocDepth);
-            }}
-          />
-        )}
+      <div className={`body${sidebarSide === "right" ? " sidebar-right" : ""}`}>
+        <Sidebar
+          workspace={workspace}
+          meta={meta}
+          activeChapterPath={chapter?.path ?? null}
+          chapters={chapters}
+          onMetaChange={(patch) => setMeta((prev) => ({ ...prev, ...patch }))}
+          onSelectFile={handleSelectFile}
+          excluded={excluded}
+          onToggleExclude={toggleExclude}
+          onRestoreAll={restoreAllExcluded}
+          onReorder={handleReorder}
+          tocPage={tocPage}
+          tocDepth={tocDepth}
+          onTocChange={(patch) => {
+            if (patch.tocPage !== undefined) setTocPage(patch.tocPage);
+            if (patch.tocDepth !== undefined) setTocDepth(patch.tocDepth);
+          }}
+        />
 
         {workspace ? (
           mode === "edit" ? (
