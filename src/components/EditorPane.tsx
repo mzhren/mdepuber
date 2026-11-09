@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EditorState, Prec } from "@codemirror/state";
+import { EditorSelection, EditorState, Prec, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import {
+  Decoration,
+  DecorationSet,
   EditorView,
+  ViewPlugin,
+  ViewUpdate,
   drawSelection,
   dropCursor,
   highlightActiveLine,
@@ -27,8 +31,9 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { tags } from "@lezer/highlight";
 
 import { countWords, splitFrontMatter } from "../lib/markdown";
+import { analyzeSpoken, SPOKEN_KIND_LABEL, type SpokenFinding } from "../lib/spoken";
 import { RenderedBody } from "./RenderedBody";
-import { SaveIcon } from "./Icons";
+import { SaveIcon, ScissorsIcon } from "./Icons";
 
 export interface EditorPaneProps {
   /** Absolute file path being edited (used for asset URL rewriting). */
@@ -135,6 +140,46 @@ const editorTheme = EditorView.theme({
   },
 });
 
+/* ------------------------------------------------------- 智能剪口播 ---------- */
+
+const setSpokenMode = StateEffect.define<boolean>();
+
+const spokenModeField = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setSpokenMode)) return effect.value;
+    }
+    return value;
+  },
+});
+
+const spokenDecorations = (view: EditorView): DecorationSet => {
+  if (!view.state.field(spokenModeField, false)) return Decoration.none;
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const finding of analyzeSpoken(view.state.doc.toString())) {
+    builder.add(finding.from, finding.to, Decoration.mark({ class: `spoken-${finding.kind}` }));
+  }
+  return builder.finish();
+};
+
+const spokenHighlight = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = spokenDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      const modeChanged =
+        update.state.field(spokenModeField) !== update.startState.field(spokenModeField);
+      if (update.docChanged || modeChanged) this.decorations = spokenDecorations(update.view);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
 /**
  * Markdown editing: CodeMirror buffer on the left, a live-rendered preview
  * (front matter hidden) on the right. The buffer is uncontrolled — the parent
@@ -164,6 +209,11 @@ export function EditorPane({
   const debounceRef = useRef<number | undefined>(undefined);
   const [dirty, setDirtyLocal] = useState(false);
   const [previewBody, setPreviewBody] = useState(() => splitFrontMatter(initialRaw).body);
+  // 智能剪口播
+  const [spokenOn, setSpokenOn] = useState(false);
+  const [findings, setFindings] = useState<SpokenFinding[]>([]);
+  const spokenOnRef = useRef(spokenOn);
+  spokenOnRef.current = spokenOn;
 
   // Keep the latest callbacks reachable from the (mount-once) editor setup
   // without recreating the CodeMirror state.
@@ -183,6 +233,7 @@ export function EditorPane({
       debounceRef.current = window.setTimeout(() => {
         const text = viewRef.current?.state.doc.toString() ?? "";
         setPreviewBody(splitFrontMatter(text).body);
+        if (spokenOnRef.current) setFindings(analyzeSpoken(text));
       }, 250);
     };
 
@@ -209,6 +260,8 @@ export function EditorPane({
           crosshairCursor(),
           EditorView.lineWrapping,
           markdown({ base: markdownLanguage }),
+          spokenModeField,
+          spokenHighlight,
           search({ top: true }),
           Prec.highest(
             keymap.of([
@@ -250,6 +303,32 @@ export function EditorPane({
     reportDirty((viewRef.current?.state.doc.toString() ?? initialRaw) !== initialRaw);
   }, [initialRaw]);
 
+  // Toggling 智能剪口播 switches the editor decorations and (re)runs the
+  // analysis for the findings panel.
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setSpokenMode.of(spokenOn) });
+    setFindings(spokenOn ? analyzeSpoken(viewRef.current?.state.doc.toString() ?? "") : []);
+  }, [spokenOn]);
+
+  const spokenCounts = useMemo(() => {
+    const counts = { filler: 0, repeat: 0, pause: 0 };
+    for (const finding of findings) counts[finding.kind] += 1;
+    return counts;
+  }, [findings]);
+
+  const jumpToFinding = (finding: SpokenFinding) => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      selection: EditorSelection.cursor(finding.from),
+      effects: EditorView.scrollIntoView(
+        EditorSelection.range(finding.from, Math.max(finding.to, finding.from + 1)),
+        { y: "center" },
+      ),
+    });
+    view.focus();
+  };
+
   const words = useMemo(() => countWords(previewBody), [previewBody]);
 
   return (
@@ -273,6 +352,24 @@ export function EditorPane({
         </div>
 
         <div className="titlebar-group">
+          {spokenOn && (
+            <span className="spoken-counts">
+              <span className="spoken-chip spoken-chip-filler">
+                语气词 {spokenCounts.filler}
+              </span>
+              <span className="spoken-chip spoken-chip-repeat">重复 {spokenCounts.repeat}</span>
+              <span className="spoken-chip spoken-chip-pause">留白 {spokenCounts.pause}</span>
+            </span>
+          )}
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm${spokenOn ? " is-on" : ""}`}
+            onClick={() => setSpokenOn((value) => !value)}
+            title="智能剪口播：标记语气词、重复口误与留白（基于文本近似）"
+          >
+            <ScissorsIcon size={12} />
+            智能剪口播
+          </button>
           <span className="editor-words" title="实时预览正文字数（不含 front matter）">
             {words.toLocaleString("zh-CN")} 字
           </span>
@@ -288,6 +385,34 @@ export function EditorPane({
           </button>
         </div>
       </div>
+
+      {spokenOn && (
+        <div className="spoken-panel">
+          {findings.length === 0 ? (
+            <div className="spoken-empty">未发现可剪的冗余片段。</div>
+          ) : (
+            <div className="spoken-list">
+              {findings.map((finding, index) => (
+                <button
+                  key={`${finding.from}-${index}`}
+                  type="button"
+                  className="spoken-item"
+                  onClick={() => jumpToFinding(finding)}
+                  title="点击跳转到该位置"
+                >
+                  <span className={`spoken-chip spoken-chip-${finding.kind}`}>
+                    {SPOKEN_KIND_LABEL[finding.kind]}
+                  </span>
+                  <span className="spoken-snippet">
+                    {finding.text.trim().slice(0, 36) || "（空白留白）"}
+                  </span>
+                  <span className="spoken-line">第 {finding.line} 行</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="preview-stage">
         <div className="editor-split">

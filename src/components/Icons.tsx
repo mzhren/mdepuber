@@ -137,3 +137,11 @@ export const SaveIcon = ({ size = 14, className }: IconProps) => (
     <path d="M5.5 13v-3.5h5V13" />
   </svg>
 );
+
+export const ScissorsIcon = ({ size = 14, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="4.6" cy="4.3" r="2" />
+    <circle cx="4.6" cy="11.7" r="2" />
+    <path d="m6.4 5.6 6.6 6.2M6.4 10.4 13 4.2" />
+  </svg>
+);
